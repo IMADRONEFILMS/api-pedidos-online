@@ -1,0 +1,157 @@
+[
+  {
+    "id": 1,
+    "criadoEm": "2026-04-09T16:55:10.270Z",
+    "status": "novo",
+    "cliente": "Teste Cliente",
+    "tipoPedido": "retirada",
+    "endereco": "",
+    "pagamento": "pix",
+    "trocoPara": null,
+    "observacao": "teste",
+    "taxaEntrega": 1,
+    "total": 21,
+    "itens": [
+      {
+        "nome": "Açaí 400ml",
+        "quantidade": 1,
+        "preco": 14,
+        "extras": [
+          {
+            "nome": "Cereja",
+            "quantidade": 2,
+            "valor": 3
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "criadoEm": "2026-04-09T17:51:45.165Z",
+    "status": "novo",
+    "cliente": "Karina",
+    "tipoPedido": "entrega",
+    "endereco": "Rua Teste, 123",
+    "pagamento": "pix",
+    "trocoPara": null,
+    "observacao": "sem granola",
+    "taxaEntrega": 1,
+    "total": 27,
+    "itens": [
+      {
+        "nome": "Açaí 500ml",
+        "quantidade": 1,
+        "preco": 17,
+        "extras": [
+          {
+            "nome": "Cereja",
+            "quantidade": 2,
+            "valor": 3
+          },
+          {
+            "nome": "Amendoim",
+            "quantidade": 1,
+            "valor": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "criadoEm": "2026-04-09T17:58:46.342Z",
+    "status": "novo",
+    "cliente": "Karina",
+    "tipoPedido": "entrega",
+    "endereco": "Rua Teste, 123",
+    "pagamento": "pix",
+    "trocoPara": null,
+    "observacao": "sem granola",
+    "taxaEntrega": 1,
+    "total": 27,
+    "itens": [
+      {
+        "nome": "Açaí 500ml",
+        "quantidade": 1,
+        "preco": 17,
+        "extras": [
+          {
+            "nome": "Cereja",
+            "quantidade": 2,
+            "valor": 3
+          },
+          {
+            "nome": "Amendoim",
+            "quantidade": 1,
+            "valor": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "criadoEm": "2026-04-09T17:59:44.094Z",
+    "status": "novo",
+    "cliente": "Karina",
+    "tipoPedido": "entrega",
+    "endereco": "Rua Teste, 123",
+    "pagamento": "pix",
+    "trocoPara": null,
+    "observacao": "sem granola",
+    "taxaEntrega": 1,
+    "total": 27,
+    "itens": [
+      {
+        "nome": "Açaí 500ml",
+        "quantidade": 1,
+        "preco": 17,
+        "extras": [
+          {
+            "nome": "Cereja",
+            "quantidade": 2,
+            "valor": 3
+          },
+          {
+            "nome": "Amendoim",
+            "quantidade": 1,
+            "valor": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "criadoEm": "2026-04-09T18:05:02.171Z",
+    "status": "novo",
+    "cliente": "Karina",
+    "tipoPedido": "entrega",
+    "endereco": "Rua Teste, 123",
+    "pagamento": "pix",
+    "trocoPara": null,
+    "observacao": "sem granola",
+    "taxaEntrega": 1,
+    "total": 27,
+    "itens": [
+      {
+        "nome": "Açaí 500ml",
+        "quantidade": 1,
+        "preco": 17,
+        "extras": [
+          {
+            "nome": "Cereja",
+            "quantidade": 2,
+            "valor": 3
+          },
+          {
+            "nome": "Amendoim",
+            "quantidade": 1,
+            "valor": 1
+          }
+        ]
+      }
+    ]
+  }
+]
