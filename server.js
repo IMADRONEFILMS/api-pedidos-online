@@ -3,7 +3,7 @@ const cors = require("cors");
 const fs = require("fs").promises;
 const path = require("path");
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "pedidos.json");
 
 const STATUS_VALIDOS = ["novo", "preparo", "concluido", "cancelado"];
