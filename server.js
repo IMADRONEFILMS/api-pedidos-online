@@ -176,6 +176,39 @@ function ordenarMaisNovoPrimeiro(pedidos) {
   });
 }
 
+function ordenarMaisAntigoPrimeiro(pedidos) {
+  return [...pedidos].sort((a, b) => {
+    const ta = new Date(a.createdAt || a.criadoEm || 0).getTime();
+    const tb = new Date(b.createdAt || b.criadoEm || 0).getTime();
+    return ta - tb;
+  });
+}
+
+function instanteCriacao(p) {
+  return p.createdAt || p.criadoEm;
+}
+
+function componentesDataLocal(d) {
+  return {
+    y: d.getFullYear(),
+    m: d.getMonth(),
+    day: d.getDate(),
+  };
+}
+
+function ehMesmoDiaLocal(isoOuDate, ref = new Date()) {
+  const t = new Date(isoOuDate).getTime();
+  if (Number.isNaN(t)) return false;
+  const a = componentesDataLocal(new Date(t));
+  const b = componentesDataLocal(ref);
+  return a.y === b.y && a.m === b.m && a.day === b.day;
+}
+
+function pedidoCriadoNoDiaLocal(p, ref = new Date()) {
+  const iso = instanteCriacao(p);
+  return Boolean(iso && ehMesmoDiaLocal(iso, ref));
+}
+
 function gerarIdUnico(pedidos) {
   const existentes = new Set(pedidos.map((p) => String(p.id)));
   let id;
@@ -236,6 +269,83 @@ app.get("/api/pedidos/novos", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ erro: "Não foi possível listar os pedidos novos." });
+  }
+});
+
+app.get("/api/pedidos/ativos", async (req, res) => {
+  try {
+    const pedidos = await lerPedidos();
+    const ativos = pedidos.filter(
+      (p) => p.status === "novo" || p.status === "preparo"
+    );
+    const lista = respostaPedidos(ordenarMaisAntigoPrimeiro(ativos));
+    console.log("GET /api/pedidos/ativos:", { retornados: lista.length });
+    res.json(lista);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Não foi possível listar os pedidos ativos." });
+  }
+});
+
+app.get("/api/pedidos/resumo-do-dia", async (req, res) => {
+  try {
+    const pedidos = await lerPedidos();
+    const ref = new Date();
+    const noDia = (p) => pedidoCriadoNoDiaLocal(p, ref);
+
+    const novos = respostaPedidos(
+      ordenarMaisAntigoPrimeiro(
+        pedidos.filter((p) => p.status === "novo" && noDia(p))
+      )
+    );
+    const preparo = respostaPedidos(
+      ordenarMaisAntigoPrimeiro(
+        pedidos.filter((p) => p.status === "preparo" && noDia(p))
+      )
+    );
+    const concluidos = respostaPedidos(
+      ordenarMaisAntigoPrimeiro(
+        pedidos.filter((p) => p.status === "concluido" && noDia(p))
+      )
+    );
+    const cancelados = respostaPedidos(
+      ordenarMaisAntigoPrimeiro(
+        pedidos.filter((p) => p.status === "cancelado" && noDia(p))
+      )
+    );
+
+    console.log("GET /api/pedidos/resumo-do-dia:", {
+      novos: novos.length,
+      preparo: preparo.length,
+      concluidos: concluidos.length,
+      cancelados: cancelados.length,
+    });
+
+    res.json({ novos, preparo, concluidos, cancelados });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ erro: "Não foi possível obter o resumo do dia." });
+  }
+});
+
+app.get("/api/pedidos/:id", async (req, res) => {
+  try {
+    const idParam = req.params.id;
+    const pedidos = await lerPedidos();
+    const p = pedidos.find((x) => String(x.id) === String(idParam));
+
+    if (!p) {
+      console.log("GET /api/pedidos/:id:", { id: idParam, encontrado: false });
+      return res.status(404).json({ erro: "Pedido não encontrado." });
+    }
+
+    console.log("GET /api/pedidos/:id:", { id: idParam, encontrado: true });
+    res.json(respostaPedido(p));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ erro: "Não foi possível obter o pedido." });
   }
 });
 
