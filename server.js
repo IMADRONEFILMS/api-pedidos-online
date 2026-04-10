@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs").promises;
 const path = require("path");
+const { randomUUID } = require("crypto");
 
 const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "pedidos.json");
@@ -34,13 +35,13 @@ function ordenarMaisNovoPrimeiro(pedidos) {
   });
 }
 
-function proximoId(pedidos) {
-  if (!pedidos.length) return 1;
-  const ids = pedidos.map((p) => {
-    const n = Number(p.id);
-    return Number.isFinite(n) ? n : 0;
-  });
-  return Math.max(...ids, 0) + 1;
+function gerarIdUnico(pedidos) {
+  const existentes = new Set(pedidos.map((p) => String(p.id)));
+  let id;
+  do {
+    id = randomUUID();
+  } while (existentes.has(id));
+  return id;
 }
 
 function temCliente(cliente) {
@@ -93,9 +94,11 @@ app.post("/api/pedidos", async (req, res) => {
     }
 
     const pedidos = await lerPedidos();
+    const agora = new Date().toISOString();
     const novo = {
-      id: proximoId(pedidos),
-      criadoEm: new Date().toISOString(),
+      id: gerarIdUnico(pedidos),
+      criadoEm: agora,
+      createdAt: agora,
       status: "novo",
       cliente: body.cliente,
       tipoPedido: body.tipoPedido,
@@ -110,6 +113,7 @@ app.post("/api/pedidos", async (req, res) => {
 
     pedidos.push(novo);
     await salvarPedidos(pedidos);
+    console.log("Pedido criado:", { id: novo.id, createdAt: novo.createdAt });
     res.status(201).json(novo);
   } catch (err) {
     console.error(err);
