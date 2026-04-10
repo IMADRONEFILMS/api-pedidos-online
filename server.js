@@ -7,7 +7,13 @@ const { randomUUID } = require("crypto");
 const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "pedidos.json");
 
-const STATUS_OFICIAIS = new Set(["novo", "preparo", "concluido", "cancelado"]);
+const STATUS_OFICIAIS = new Set([
+  "novo",
+  "preparo",
+  "saiu_entrega",
+  "concluido",
+  "cancelado",
+]);
 
 const MAPEAMENTO_STATUS = {
   pendente: "novo",
@@ -18,6 +24,10 @@ const MAPEAMENTO_STATUS = {
   preparando: "preparo",
   cozinha: "preparo",
   em_andamento: "preparo",
+  saiu_para_entrega: "saiu_entrega",
+  em_entrega: "saiu_entrega",
+  em_rota: "saiu_entrega",
+  entregando: "saiu_entrega",
   pronto: "concluido",
   entregue: "concluido",
   finalizado: "concluido",
@@ -34,6 +44,7 @@ const CHAVES_RESPOSTA_PRIORITARIAS = [
   "status",
   "statusUpdatedAt",
   "preparingAt",
+  "saiuEntregaAt",
   "completedAt",
   "cancelledAt",
   "printedAt",
@@ -153,6 +164,10 @@ function normalizarPedidoPersistido(p) {
   if (p.status === "preparo" && p.preparingAt == null) {
     p.preparingAt = p.statusUpdatedAt;
     marcar("preparingAt ← statusUpdatedAt");
+  }
+  if (p.status === "saiu_entrega" && p.saiuEntregaAt == null) {
+    p.saiuEntregaAt = p.statusUpdatedAt;
+    marcar("saiuEntregaAt ← statusUpdatedAt");
   }
   if (p.status === "concluido" && p.completedAt == null) {
     p.completedAt = p.statusUpdatedAt;
@@ -280,6 +295,9 @@ function aplicarMudancaStatus(pedido, novoStatus, agora) {
   if (novoStatus === "preparo" && pedido.preparingAt == null) {
     pedido.preparingAt = agora;
   }
+  if (novoStatus === "saiu_entrega" && pedido.saiuEntregaAt == null) {
+    pedido.saiuEntregaAt = agora;
+  }
   if (novoStatus === "concluido" && pedido.completedAt == null) {
     pedido.completedAt = agora;
   }
@@ -319,7 +337,10 @@ app.get("/api/pedidos/ativos", async (req, res) => {
   try {
     const pedidos = await lerPedidos();
     const ativos = pedidos.filter(
-      (p) => p.status === "novo" || p.status === "preparo"
+      (p) =>
+        p.status === "novo" ||
+        p.status === "preparo" ||
+        p.status === "saiu_entrega"
     );
     const lista = respostaPedidos(ordenarMaisAntigoPrimeiro(ativos));
     console.log("GET /api/pedidos/ativos:", { retornados: lista.length });
@@ -346,6 +367,11 @@ app.get("/api/pedidos/resumo-do-dia", async (req, res) => {
         pedidos.filter((p) => p.status === "preparo" && noDia(p))
       )
     );
+    const saiuEntrega = respostaPedidos(
+      ordenarMaisAntigoPrimeiro(
+        pedidos.filter((p) => p.status === "saiu_entrega" && noDia(p))
+      )
+    );
     const concluidos = respostaPedidos(
       ordenarMaisAntigoPrimeiro(
         pedidos.filter((p) => p.status === "concluido" && noDia(p))
@@ -360,11 +386,12 @@ app.get("/api/pedidos/resumo-do-dia", async (req, res) => {
     console.log("GET /api/pedidos/resumo-do-dia:", {
       novos: novos.length,
       preparo: preparo.length,
+      saiuEntrega: saiuEntrega.length,
       concluidos: concluidos.length,
       cancelados: cancelados.length,
     });
 
-    res.json({ novos, preparo, concluidos, cancelados });
+    res.json({ novos, preparo, saiuEntrega, concluidos, cancelados });
   } catch (err) {
     console.error(err);
     res
@@ -463,12 +490,21 @@ app.patch("/api/pedidos/:id/status", async (req, res) => {
     const statusAnterior = aplicarMudancaStatus(pedidos[idx], novoStatus, agora);
 
     await salvarPedidos(pedidos);
-    console.log("Status alterado:", {
-      id: pedidos[idx].id,
-      statusAnterior,
-      statusNovo: novoStatus,
-      statusUpdatedAt: agora,
-    });
+    if (novoStatus === "saiu_entrega") {
+      console.log("saiu_entrega:", {
+        id: pedidos[idx].id,
+        statusAnterior,
+        statusNovo: novoStatus,
+        statusUpdatedAt: agora,
+      });
+    } else {
+      console.log("Status alterado:", {
+        id: pedidos[idx].id,
+        statusAnterior,
+        statusNovo: novoStatus,
+        statusUpdatedAt: agora,
+      });
+    }
     res.json(respostaPedido(pedidos[idx]));
   } catch (err) {
     console.error(err);
