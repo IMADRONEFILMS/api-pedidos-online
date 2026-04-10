@@ -29,6 +29,7 @@ const MAPEAMENTO_STATUS = {
 
 const CHAVES_RESPOSTA_PRIORITARIAS = [
   "id",
+  "numeroPedido",
   "createdAt",
   "status",
   "statusUpdatedAt",
@@ -93,6 +94,7 @@ async function lerPedidos() {
         });
       }
     }
+    if (garantirNumeroPedidoNosPedidos(arr)) dirty = true;
     if (dirty) await salvarPedidos(arr);
     return arr;
   } catch (err) {
@@ -216,6 +218,47 @@ function gerarIdUnico(pedidos) {
     id = randomUUID();
   } while (existentes.has(id));
   return id;
+}
+
+function obterNumeroPedidoValido(p) {
+  const n = Number(p.numeroPedido);
+  if (Number.isFinite(n) && n >= 1 && Number.isInteger(n)) return n;
+  return null;
+}
+
+function maxNumeroPedidoExistente(pedidos) {
+  let max = 0;
+  for (const p of pedidos) {
+    const n = obterNumeroPedidoValido(p);
+    if (n != null && n > max) max = n;
+  }
+  return max;
+}
+
+function proximoNumeroPedido(pedidos) {
+  return maxNumeroPedidoExistente(pedidos) + 1;
+}
+
+function garantirNumeroPedidoNosPedidos(pedidos) {
+  const semNumero = pedidos.filter((p) => obterNumeroPedidoValido(p) == null);
+  if (!semNumero.length) return false;
+
+  const maxAtual = maxNumeroPedidoExistente(pedidos);
+  semNumero.sort((a, b) => {
+    const ta = new Date(a.createdAt || a.criadoEm || 0).getTime();
+    const tb = new Date(b.createdAt || b.criadoEm || 0).getTime();
+    return ta - tb;
+  });
+
+  let next = maxAtual + 1;
+  for (const p of semNumero) {
+    p.numeroPedido = next++;
+    console.log("Pedido normalizado:", {
+      id: p.id,
+      numeroPedido: p.numeroPedido,
+    });
+  }
+  return true;
 }
 
 function temCliente(cliente) {
@@ -366,6 +409,7 @@ app.post("/api/pedidos", async (req, res) => {
     const agora = new Date().toISOString();
     const novo = {
       id: gerarIdUnico(pedidos),
+      numeroPedido: proximoNumeroPedido(pedidos),
       createdAt: agora,
       criadoEm: agora,
       status: "novo",
@@ -385,8 +429,8 @@ app.post("/api/pedidos", async (req, res) => {
     await salvarPedidos(pedidos);
     console.log("Pedido criado:", {
       id: novo.id,
+      numeroPedido: novo.numeroPedido,
       createdAt: novo.createdAt,
-      status: novo.status,
     });
     res.status(201).json(respostaPedido(novo));
   } catch (err) {
