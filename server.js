@@ -6,6 +6,32 @@ const { randomUUID } = require("crypto");
 
 const PORT = process.env.PORT || 3001;
 const DATA_FILE = path.join(__dirname, "pedidos.json");
+const DATA_FILE_TMP = `${DATA_FILE}.tmp`;
+const DATA_FILE_BAK = `${DATA_FILE}.bak`;
+
+/**
+ * Fila única (mutex por cadeia de promises): serializa leitura/gravação em pedidos.json
+ * para evitar corrida entre POST/PATCH e normalização que persiste. Todas as rotas que
+ * leem ou alteram o arquivo entram aqui; a resposta HTTP só ocorre após o fn terminar.
+ */
+let persistChain = Promise.resolve();
+
+function executarComPersistencia(fn) {
+  const run = async () => {
+    console.log("[persist] lock acquired");
+    try {
+      return await fn();
+    } finally {
+      console.log("[persist] lock released");
+    }
+  };
+  const p = persistChain.then(run, run);
+  persistChain = p.then(
+    () => undefined,
+    () => undefined
+  );
+  return p;
+}
 
 const STATUS_OFICIAIS = new Set([
   "novo",
@@ -89,7 +115,42 @@ function respostaPedidos(lista) {
   return lista.map(respostaPedido);
 }
 
-async function lerPedidos() {
+/**
+ * Gravação atômica: backup da versão anterior, escreve .tmp e renomeia sobre pedidos.json.
+ * Só deve ser chamado já dentro de executarComPersistencia (evita lock aninhado).
+ */
+async function salvarPedidosSeguro(pedidos) {
+  const json = JSON.stringify(pedidos, null, 2);
+  try {
+    try {
+      await fs.access(DATA_FILE);
+      await fs.copyFile(DATA_FILE, DATA_FILE_BAK);
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
+    await fs.writeFile(DATA_FILE_TMP, json, "utf8");
+    try {
+      await fs.rename(DATA_FILE_TMP, DATA_FILE);
+    } catch (e) {
+      if (process.platform === "win32") {
+        await fs.unlink(DATA_FILE).catch(() => {});
+        await fs.rename(DATA_FILE_TMP, DATA_FILE);
+      } else {
+        throw e;
+      }
+    }
+    console.log("[persist] write success");
+  } catch (err) {
+    console.error("[persist] write error", err);
+    await fs.unlink(DATA_FILE_TMP).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Lê o arquivo, normaliza pedidos e persiste migrações; não adquire lock (use dentro da fila ou via lerPedidos).
+ */
+async function carregarPedidosInterno() {
   try {
     const raw = await fs.readFile(DATA_FILE, "utf8");
     const data = JSON.parse(raw);
@@ -106,15 +167,20 @@ async function lerPedidos() {
       }
     }
     if (garantirNumeroPedidoNosPedidos(arr)) dirty = true;
-    if (dirty) await salvarPedidos(arr);
+    if (dirty) await salvarPedidosSeguro(arr);
     return arr;
   } catch (err) {
     if (err.code === "ENOENT") {
-      await fs.writeFile(DATA_FILE, "[]", "utf8");
+      await salvarPedidosSeguro([]);
       return [];
     }
     throw err;
   }
+}
+
+/** Leitura consistente com a fila: uma operação por vez no disco. */
+async function lerPedidos() {
+  return executarComPersistencia(() => carregarPedidosInterno());
 }
 
 function normalizarPedidoPersistido(p) {
@@ -179,10 +245,6 @@ function normalizarPedidoPersistido(p) {
   }
 
   return { mudou, ajustes };
-}
-
-async function salvarPedidos(pedidos) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(pedidos, null, 2), "utf8");
 }
 
 function ordenarMaisNovoPrimeiro(pedidos) {
@@ -432,28 +494,31 @@ app.post("/api/pedidos", async (req, res) => {
         .json({ erro: "Informe um array itens com pelo menos um item." });
     }
 
-    const pedidos = await lerPedidos();
-    const agora = new Date().toISOString();
-    const novo = {
-      id: gerarIdUnico(pedidos),
-      numeroPedido: proximoNumeroPedido(pedidos),
-      createdAt: agora,
-      criadoEm: agora,
-      status: "novo",
-      statusUpdatedAt: agora,
-      cliente: body.cliente,
-      tipoPedido: body.tipoPedido,
-      endereco: body.endereco,
-      pagamento: body.pagamento,
-      trocoPara: body.trocoPara,
-      observacao: body.observacao,
-      taxaEntrega: body.taxaEntrega,
-      total: body.total,
-      itens: body.itens,
-    };
+    const novo = await executarComPersistencia(async () => {
+      const pedidos = await carregarPedidosInterno();
+      const agora = new Date().toISOString();
+      const criado = {
+        id: gerarIdUnico(pedidos),
+        numeroPedido: proximoNumeroPedido(pedidos),
+        createdAt: agora,
+        criadoEm: agora,
+        status: "novo",
+        statusUpdatedAt: agora,
+        cliente: body.cliente,
+        tipoPedido: body.tipoPedido,
+        endereco: body.endereco,
+        pagamento: body.pagamento,
+        trocoPara: body.trocoPara,
+        observacao: body.observacao,
+        taxaEntrega: body.taxaEntrega,
+        total: body.total,
+        itens: body.itens,
+      };
+      pedidos.push(criado);
+      await salvarPedidosSeguro(pedidos);
+      return criado;
+    });
 
-    pedidos.push(novo);
-    await salvarPedidos(pedidos);
     console.log("Pedido criado:", {
       id: novo.id,
       numeroPedido: novo.numeroPedido,
@@ -478,34 +543,46 @@ app.patch("/api/pedidos/:id/status", async (req, res) => {
     const norm = normalizarStatus(status, "PATCH /api/pedidos/:id/status");
     const novoStatus = norm.status;
 
-    const pedidos = await lerPedidos();
     const idParam = req.params.id;
-    const idx = pedidos.findIndex((p) => String(p.id) === String(idParam));
+    const resultado = await executarComPersistencia(async () => {
+      const pedidos = await carregarPedidosInterno();
+      const idx = pedidos.findIndex((p) => String(p.id) === String(idParam));
+      if (idx === -1) {
+        return { notFound: true };
+      }
+      const agora = new Date().toISOString();
+      const statusAnterior = aplicarMudancaStatus(pedidos[idx], novoStatus, agora);
+      await salvarPedidosSeguro(pedidos);
+      return {
+        notFound: false,
+        pedido: pedidos[idx],
+        statusAnterior,
+        novoStatus,
+        agora,
+      };
+    });
 
-    if (idx === -1) {
+    if (resultado.notFound) {
       return res.status(404).json({ erro: "Pedido não encontrado." });
     }
 
-    const agora = new Date().toISOString();
-    const statusAnterior = aplicarMudancaStatus(pedidos[idx], novoStatus, agora);
-
-    await salvarPedidos(pedidos);
-    if (novoStatus === "saiu_entrega") {
+    const { pedido, statusAnterior, novoStatus: st, agora } = resultado;
+    if (st === "saiu_entrega") {
       console.log("saiu_entrega:", {
-        id: pedidos[idx].id,
+        id: pedido.id,
         statusAnterior,
-        statusNovo: novoStatus,
+        statusNovo: st,
         statusUpdatedAt: agora,
       });
     } else {
       console.log("Status alterado:", {
-        id: pedidos[idx].id,
+        id: pedido.id,
         statusAnterior,
-        statusNovo: novoStatus,
+        statusNovo: st,
         statusUpdatedAt: agora,
       });
     }
-    res.json(respostaPedido(pedidos[idx]));
+    res.json(respostaPedido(pedido));
   } catch (err) {
     console.error(err);
     res.status(500).json({ erro: "Não foi possível atualizar o status." });
