@@ -9,6 +9,8 @@ const DATA_FILE = path.join(__dirname, "pedidos.json");
 const DATA_FILE_TMP = `${DATA_FILE}.tmp`;
 const DATA_FILE_BAK = `${DATA_FILE}.bak`;
 
+const TIMEZONE_OPERACAO = "America/Sao_Paulo";
+
 /**
  * Fila única (mutex por cadeia de promises): serializa leitura/gravação em pedidos.json
  * para evitar corrida entre POST/PATCH e normalização que persiste. Todas as rotas que
@@ -267,25 +269,30 @@ function instanteCriacao(p) {
   return p.createdAt || p.criadoEm;
 }
 
-function componentesDataLocal(d) {
-  return {
-    y: d.getFullYear(),
-    m: d.getMonth(),
-    day: d.getDate(),
-  };
+function chaveDataOperacao(data) {
+  const d = data instanceof Date ? data : new Date(data);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE_OPERACAO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-function ehMesmoDiaLocal(isoOuDate, ref = new Date()) {
-  const t = new Date(isoOuDate).getTime();
-  if (Number.isNaN(t)) return false;
-  const a = componentesDataLocal(new Date(t));
-  const b = componentesDataLocal(ref);
-  return a.y === b.y && a.m === b.m && a.day === b.day;
+function ehMesmoDiaOperacao(isoOuDate, ref = new Date()) {
+  const a = chaveDataOperacao(isoOuDate);
+  const b = chaveDataOperacao(ref);
+  return Boolean(a && b && a === b);
 }
 
-function pedidoCriadoNoDiaLocal(p, ref = new Date()) {
+function pedidoCriadoNoDiaOperacao(p, ref = new Date()) {
   const iso = instanteCriacao(p);
-  return Boolean(iso && ehMesmoDiaLocal(iso, ref));
+  return Boolean(iso && ehMesmoDiaOperacao(iso, ref));
 }
 
 function gerarIdUnico(pedidos) {
@@ -417,7 +424,7 @@ app.get("/api/pedidos/resumo-do-dia", async (req, res) => {
   try {
     const pedidos = await lerPedidos();
     const ref = new Date();
-    const noDia = (p) => pedidoCriadoNoDiaLocal(p, ref);
+    const noDia = (p) => pedidoCriadoNoDiaOperacao(p, ref);
 
     const novos = respostaPedidos(
       ordenarMaisAntigoPrimeiro(
@@ -446,6 +453,8 @@ app.get("/api/pedidos/resumo-do-dia", async (req, res) => {
     );
 
     console.log("GET /api/pedidos/resumo-do-dia:", {
+      timezone: TIMEZONE_OPERACAO,
+      hojeOperacao: chaveDataOperacao(ref),
       novos: novos.length,
       preparo: preparo.length,
       saiuEntrega: saiuEntrega.length,
